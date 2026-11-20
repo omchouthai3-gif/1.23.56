@@ -1,4 +1,5 @@
 
+
 name: Build BeejRakshak Android APK
 
 on:
@@ -22,22 +23,24 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
+      # 1. Download project source
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
+      # 3. Setup Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      # Use the Android SDK already installed on GitHub's runner.
-      # Do not use android-actions/setup-android here.
+      # 4. Configure Android SDK
       - name: Configure Android SDK
         shell: bash
         run: |
@@ -62,22 +65,27 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
+      # 5. Install project dependencies
       - name: Install npm dependencies
         run: npm install --legacy-peer-deps --no-audit --no-fund
 
+      # 6. Build web application
       - name: Build web application
         run: npm run build
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
 
+      # 7. Sync Capacitor Android
       - name: Sync Capacitor Android
         run: npx cap sync android
 
+      # 8. Setup Gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
 
+      # 9. Generate Gradle wrapper if missing
       - name: Generate Gradle wrapper if missing
         shell: bash
         run: |
@@ -87,30 +95,42 @@ jobs:
              [ ! -f android/gradle/wrapper/gradle-wrapper.jar ]; then
 
             mkdir -p /tmp/gradle-bootstrap
+            cd /tmp/gradle-bootstrap
 
-            gradle -p /tmp/gradle-bootstrap wrapper \
+            printf "rootProject.name = 'gradle-bootstrap'\n" > settings.gradle
+            printf "tasks.register('dummy')\n" > build.gradle
+
+            gradle wrapper \
               --gradle-version 8.14.3 \
               --distribution-type all
 
-            mkdir -p android/gradle/wrapper
+            mkdir -p "$GITHUB_WORKSPACE/android/gradle/wrapper"
 
-            cp /tmp/gradle-bootstrap/gradlew android/
-            cp /tmp/gradle-bootstrap/gradlew.bat android/
-            cp /tmp/gradle-bootstrap/gradle/wrapper/* \
-              android/gradle/wrapper/
+            cp gradlew "$GITHUB_WORKSPACE/android/"
+            cp gradlew.bat "$GITHUB_WORKSPACE/android/"
+
+            cp gradle/wrapper/gradle-wrapper.jar \
+              "$GITHUB_WORKSPACE/android/gradle/wrapper/"
+
+            cp gradle/wrapper/gradle-wrapper.properties \
+              "$GITHUB_WORKSPACE/android/gradle/wrapper/"
           fi
 
-          chmod +x android/gradlew
+          chmod +x "$GITHUB_WORKSPACE/android/gradlew"
 
+      # 10. Build Android APK
       - name: Build APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
+      # 11. Verify APK
       - name: Verify APK
         run: |
+          set -euo pipefail
           test -s android/app/build/outputs/apk/debug/app-debug.apk
           ls -lh android/app/build/outputs/apk/debug/app-debug.apk
 
+      # 12. Upload APK
       - name: Upload BeejRakshak APK
         uses: actions/upload-artifact@v4
         with:
